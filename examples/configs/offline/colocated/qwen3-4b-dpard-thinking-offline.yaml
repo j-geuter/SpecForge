@@ -1,0 +1,39 @@
+model:
+  target_model_path: Qwen/Qwen3-4B
+  draft_model_config: configs/qwen3-4b-dflash-3l-b16.json
+  torch_dtype: bfloat16
+
+data:
+  # Capture with --strategy dflash --loss-type dpard --chat-template qwen3-thinking
+  # --max-length 8192 --train-only-last-turn and the same draft JSON.
+  hidden_states_path: /n/netscratch/dam_lab/Lab/jgeuter/D-PARD/hidden_states/qwen3-4b-thinking-8k
+  max_length: 8192
+  chat_template: qwen3-thinking
+
+training:
+  strategy: dflash
+  loss_type: dpard
+  dpard_alpha: 0.5
+  num_epochs: 6
+  batch_size: 1
+  accumulation_steps: 2
+  learning_rate: 6.0e-4
+  lr_scheduler: cosine
+  warmup_ratio: 0.04
+  max_grad_norm: 1.0
+  attention_backend: flex_attention
+  num_anchors: 512
+  objective_chunk_blocks: 128
+  save_interval: 5000
+  max_checkpoints: 2
+  log_interval: 50
+  seed: 42
+
+run_id: qwen3-4b-dpard-thinking-b16
+output_dir: /n/netscratch/dam_lab/Lab/jgeuter/D-PARD/outputs/qwen3-4b-dpard-thinking-b16
+
+deployment:
+  mode: local_colocated
+  trainer:
+    nnodes: 1
+    nproc_per_node: 2

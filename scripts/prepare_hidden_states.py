@@ -113,6 +113,14 @@ def parse_args():
         help="DFlash training loss; dpard also captures final teacher states",
     )
     model_group.add_argument(
+        "--train-only-last-turn",
+        action="store_true",
+        help=(
+            "Supervise only the last assistant turn of each conversation, e.g. "
+            "for per-turn expanded reasoning data"
+        ),
+    )
+    model_group.add_argument(
         "--draft-model-config",
         type=str,
         default=None,
@@ -839,7 +847,7 @@ def main():
     tokenizer = load_tokenizer(
         args.target_model_path, trust_remote_code=args.trust_remote_code
     )
-    cache_params_string = f"{args.data_path}-{args.max_length}-{args.chat_template}-{args.target_model_path}-{args.num_samples}-{args.is_preformatted}"
+    cache_params_string = f"{args.data_path}-{args.max_length}-{args.chat_template}-{args.target_model_path}-{args.num_samples}-{args.is_preformatted}-{args.train_only_last_turn}"
     cache_key = hashlib.md5(cache_params_string.encode()).hexdigest()
 
     # Preprocess on complete, un-sharded dataset
@@ -853,6 +861,7 @@ def main():
             cache_dir=os.path.join(args.cache_dir, "processed_dataset"),
             cache_key=cache_key,
             is_preformatted=args.is_preformatted,
+            train_only_last_turn=args.train_only_last_turn,
             num_proc=args.build_dataset_num_proc,
             loss_mask_filter=capture_plan.loss_mask_filter,
         )
