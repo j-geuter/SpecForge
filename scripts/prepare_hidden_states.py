@@ -718,21 +718,31 @@ class HiddenStatesGenerator:
                 ):
 
                     # Process ONE sample at a time to minimize CPU RAM footprint
-                    # 1. Transfer only the required slice for one sample to CPU
+                    # 1. Transfer only the required slice for one sample to CPU,
+                    # trimmed to the sample's true length: without this, every
+                    # sample is stored padded to its batch's max length, and the
+                    # hidden states of padding tokens dominate the cache size.
+                    true_len = int(
+                        filtered_batch["attention_mask"][i].sum().item()
+                    )
                     aux_hidden_states = (
-                        aux_hidden_states.cpu().clone().unsqueeze(0)
+                        aux_hidden_states[:true_len].cpu().clone().unsqueeze(0)
                         if aux_hidden_states is not None
                         else None
                     )
                     last_hidden_states = (
-                        last_hidden_states.cpu().clone().unsqueeze(0)
+                        last_hidden_states[:true_len].cpu().clone().unsqueeze(0)
                         if last_hidden_states is not None
                         else None
                     )
                     record = self.capture_layout.materialize(
                         {
-                            "input_ids": filtered_batch["input_ids"][i].clone(),
-                            "loss_mask": filtered_batch["loss_mask"][i].clone(),
+                            "input_ids": filtered_batch["input_ids"][i][
+                                :true_len
+                            ].clone(),
+                            "loss_mask": filtered_batch["loss_mask"][i][
+                                :true_len
+                            ].clone(),
                             "aux_hidden_states": aux_hidden_states,
                             "last_hidden_states": last_hidden_states,
                         }
