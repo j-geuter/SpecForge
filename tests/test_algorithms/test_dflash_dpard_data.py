@@ -82,7 +82,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             torch.save(raw, Path(directory) / "sample.ckpt")
-            for loss_type in ("dflash", "dpace", "dpard"):
+            for loss_type in ("dflash", "dpace", "dpard", "dpala"):
                 with self.subTest(loss_type=loss_type):
                     provider = resolve_run(
                         self.config(loss_type)
@@ -94,7 +94,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
                             directory, run_id="test", ttt_length=1, max_len=3
                         ).read()
                     store = LocalFeatureStore("test")
-                    if loss_type == "dpard":
+                    if loss_type in {"dpard", "dpala"}:
                         with self.assertRaisesRegex(
                             KeyError, "target_last_hidden_states"
                         ):
@@ -122,11 +122,13 @@ class DFlashDPARDDataTest(unittest.TestCase):
             "--draft-model-config",
             str(Path(__file__).resolve().parents[2] / "configs/qwen3-8b-dflash.json"),
         ]
-        with mock.patch("sys.argv", argv):
-            args = parse_args()
-        plan = resolve_offline_capture_plan(args, SimpleNamespace(num_hidden_layers=40))
-        self.assertEqual(plan.capture_method, "dflash")
-        self.assertIn("target_last_hidden_states", plan.layout.output_names)
+        for objective in ("dpard", "dpala"):
+            argv[argv.index("--loss-type") + 1] = objective
+            with self.subTest(objective=objective), mock.patch("sys.argv", argv):
+                args = parse_args()
+                plan = resolve_offline_capture_plan(args, SimpleNamespace(num_hidden_layers=40))
+                self.assertEqual(plan.capture_method, "dflash")
+                self.assertIn("target_last_hidden_states", plan.layout.output_names)
 
     def test_dpard_teacher_reaches_non_logging_steps_with_wrapped_model(self):
         class TeacherLoss(nn.Module):
@@ -162,14 +164,16 @@ class DFlashDPARDDataTest(unittest.TestCase):
                 "target_last_hidden_states": torch.ones(1, 3, 4),
             },
         )
-        for model in (TeacherLoss(), Wrapper()):
-            with self.subTest(wrapped=isinstance(model, Wrapper)):
-                output = DFlashTrainStrategy(model).forward_loss(
-                    batch, StepContext(collect_detailed_metrics=False)
-                )
-                self.assertEqual(output.loss.item(), 24.0)
-                output.loss.backward()
-                self.assertEqual(next(model.parameters()).grad.item(), 12.0)
+        for objective in ("dpard", "dpala"):
+            for model in (TeacherLoss(), Wrapper()):
+                getattr(model, "module", model).loss_type = objective
+                with self.subTest(objective=objective, wrapped=isinstance(model, Wrapper)):
+                    output = DFlashTrainStrategy(model).forward_loss(
+                        batch, StepContext(collect_detailed_metrics=False)
+                    )
+                    self.assertEqual(output.loss.item(), 24.0)
+                    output.loss.backward()
+                    self.assertEqual(next(model.parameters()).grad.item(), 12.0)
 
 
 if __name__ == "__main__":

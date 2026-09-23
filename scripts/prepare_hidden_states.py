@@ -108,9 +108,9 @@ def parse_args():
     )
     model_group.add_argument(
         "--loss-type",
-        choices=("dflash", "dpace", "dpard"),
+        choices=("dflash", "dpace", "dpard", "dpala"),
         default="dflash",
-        help="DFlash training loss; dpard also captures final teacher states",
+        help="DFlash training loss; dpard/dpala also capture final teacher states",
     )
     model_group.add_argument(
         "--train-only-last-turn",

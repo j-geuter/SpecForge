@@ -31,10 +31,12 @@ _VALID_LOSS_TYPES = {
     "dflash",
     "dpace",
     "dpard",
+    "dpala",
     "dpace-cumulative-confidence-only",
     "dpace-continuation-value-only",
 }
 _DPACE_LOSS_TYPES = _VALID_LOSS_TYPES - {"dflash"}
+_OVERLAP_LOSS_TYPES = {"dpard", "dpala"}
 _VALID_LK_LOSS_TYPES = {None, "alpha", "lambda", "tv"}
 
 
@@ -413,11 +415,13 @@ class OnlineDFlashModel(nn.Module):
 
         candidate_selector = getattr(self.draft_model, "candidate_selector", None)
         if candidate_selector is not None and (
-            loss_type == "dpard" or normalize_by_anchors
+            loss_type in _OVERLAP_LOSS_TYPES or normalize_by_anchors
         ):
-            raise ValueError("D-PARD and static anchor normalization require DFlash1")
-        if loss_type == "dpard" and lk_loss_type is not None:
-            raise ValueError("D-PARD cannot be combined with LK loss")
+            raise ValueError(
+                "D-PARD/DPALA and static anchor normalization require DFlash1"
+            )
+        if loss_type in _OVERLAP_LOSS_TYPES and lk_loss_type is not None:
+            raise ValueError("D-PARD/DPALA cannot be combined with LK loss")
         self._selector_objective_enabled = (
             candidate_selector is not None and self.selector_loss_alpha > 0
         )
@@ -539,7 +543,7 @@ class OnlineDFlashModel(nn.Module):
             dims=[-1],
         )
 
-        if loss_type in {"dpace", "dpard"}:
+        if loss_type in {"dpace", "dpard", "dpala"}:
             return suffix
         if loss_type == "dpace-continuation-value-only":
             return suffix / prefix.clamp_min(torch.finfo(prefix.dtype).tiny)
@@ -867,6 +871,9 @@ class OnlineDFlashModel(nn.Module):
         predecessor_ids: torch.Tensor,
         sequence_anchor_scale: Optional[torch.Tensor] = None,
         aligned_target_hidden: Optional[torch.Tensor] = None,
+        target_pred_indices: Optional[torch.Tensor] = None,
+        *,
+        target_logits: Optional[torch.Tensor] = None,
     ) -> DFlashObjectiveTerms:
         """Return a flat tuple of additive objective and metric tensors."""
 
@@ -888,18 +895,33 @@ class OnlineDFlashModel(nn.Module):
 
         target_probability = torch.exp(-neg_log_q)
         credit_probability = target_probability.detach()
-        if self.loss_type == "dpard":
-            if aligned_target_hidden is None:
-                raise ValueError("D-PARD requires target_last_hidden_states")
+        if self.loss_type in _OVERLAP_LOSS_TYPES:
+            if aligned_target_hidden is None and target_logits is None:
+                raise ValueError("D-PARD/DPALA requires target_last_hidden_states")
             with torch.no_grad():
-                target_logits = self.lm_head(
-                    aligned_target_hidden.reshape(
-                        batch_size, num_blocks * block_size, hidden_size
+                if target_logits is None:
+                    aligned_logits = self.lm_head(
+                        aligned_target_hidden.reshape(
+                            batch_size, num_blocks * block_size, hidden_size
+                        )
+                    ).reshape_as(objective_logits)
+                else:
+                    if target_pred_indices is None:
+                        raise ValueError(
+                            "cached teacher logits require prediction indices"
+                        )
+                    indices = target_pred_indices.reshape(batch_size, -1, 1).expand(
+                        -1, -1, target_logits.shape[-1]
                     )
-                ).reshape_as(objective_logits)
-                log_p = F.log_softmax(target_logits.float(), dim=-1)
+                    aligned_logits = target_logits.gather(1, indices).reshape_as(
+                        objective_logits
+                    )
+                log_p = F.log_softmax(aligned_logits.float(), dim=-1)
             log_q = F.log_softmax(objective_logits.float(), dim=-1)
-            neg_log_q = -2.0 * torch.logsumexp(0.5 * (log_p + log_q), dim=-1)
+            if self.loss_type == "dpard":
+                neg_log_q = -2.0 * torch.logsumexp(0.5 * (log_p + log_q), dim=-1)
+            else:
+                neg_log_q = -torch.logsumexp(torch.minimum(log_p, log_q), dim=-1)
             with torch.no_grad():
                 credit_probability = (
                     torch.exp(torch.minimum(log_p, log_q)).sum(-1).clamp(0.0, 1.0)
@@ -1027,10 +1049,10 @@ class OnlineDFlashModel(nn.Module):
         )
         teacher_probabilities = None
         credit_probability = unary.hard_label_probability
-        if self.loss_type == "dpard":
+        if self.loss_type in _OVERLAP_LOSS_TYPES:
             if aligned_target_hidden is None:
                 raise ValueError(
-                    "D-PARD requires target_last_hidden_states for metrics"
+                    "D-PARD/DPALA requires target_last_hidden_states for metrics"
                 )
             with torch.no_grad():
                 b, a, d, h = aligned_target_hidden.shape
@@ -1473,8 +1495,8 @@ class OnlineDFlashModel(nn.Module):
         bsz, seq_len = input_ids.shape
         device = input_ids.device
 
-        if self.loss_type == "dpard" and target_last_hidden_states is None:
-            raise ValueError("D-PARD requires target_last_hidden_states")
+        if self.loss_type in _OVERLAP_LOSS_TYPES and target_last_hidden_states is None:
+            raise ValueError("D-PARD/DPALA requires target_last_hidden_states")
 
         anchor_positions, block_keep_mask, output_hidden = self._forward_draft_blocks(
             input_ids=input_ids,
@@ -1527,9 +1549,18 @@ class OnlineDFlashModel(nn.Module):
                 safe_label_indices,
             )
             if target_last_hidden_states is not None
-            and (collect_detailed_metrics or self.loss_type == "dpard")
+            and collect_detailed_metrics
             else None
         )
+        objective = self._dflash_objective_chunk_terms
+        target_pred_indices = None
+        if self.loss_type in _OVERLAP_LOSS_TYPES:
+            # Project each teacher position once, outside activation recomputation.
+            # Gather only the current anchor chunk to avoid a full anchor-vocab cache.
+            with torch.no_grad():
+                target_logits = self.lm_head(target_last_hidden_states)
+            target_pred_indices = (safe_label_indices - 1).clamp(min=0)
+            objective = partial(objective, target_logits=target_logits)
         sequence_anchor_scale = None
         if self.normalize_by_anchors:
             sequence_anchor_scale = self._sequence_anchor_scale(weight_mask)
@@ -1546,13 +1577,14 @@ class OnlineDFlashModel(nn.Module):
             selector_weight_den,
             selector_covered_num,
         ) = checkpointed_chunk_reduce(
-            self._dflash_objective_chunk_terms,
+            objective,
             hidden_4d,
             target_ids,
             weight_mask,
             predecessor_ids,
             sequence_anchor_scale,
-            aligned_target_hidden if self.loss_type == "dpard" else None,
+            None,
+            target_pred_indices,
             chunk_size=self.objective_chunk_blocks,
             dim=1,
         )
@@ -1587,8 +1619,8 @@ class OnlineDFlashModel(nn.Module):
                 accuracy_denom.detach(),
             ),
             (
-                "dpard_loss"
-                if self.loss_type == "dpard"
+                f"{self.loss_type}_loss"
+                if self.loss_type in _OVERLAP_LOSS_TYPES
                 else "lk_loss" if self.lk_loss_type is not None else "ce_loss"
             ): (
                 token_loss_num.detach(),

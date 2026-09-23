@@ -529,7 +529,7 @@ class DFlashTrainStrategy(DraftTrainStrategy):
             model_inputs["collect_detailed_metrics"] = collect_detailed_metrics
         target_last_hidden_states = t.get("target_last_hidden_states")
         model = getattr(self.dflash_model, "module", self.dflash_model)
-        requires_teacher = getattr(model, "loss_type", None) == "dpard"
+        requires_teacher = getattr(model, "loss_type", None) in {"dpard", "dpala"}
         if target_last_hidden_states is not None and (
             collect_detailed_metrics or requires_teacher
         ):

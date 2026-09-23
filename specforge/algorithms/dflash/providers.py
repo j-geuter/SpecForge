@@ -172,8 +172,8 @@ def needs_input_tools(config, draft_model):
 
 
 def resolve_for_config(config, registration):
-    """Require final teacher states only for D-PARD, preserving legacy data."""
-    if config.training.loss_type != "dpard":
+    """Require final teacher states for overlap objectives, preserving legacy data."""
+    if config.training.loss_type not in {"dpard", "dpala"}:
         return registration
     contracts = []
     for contract in registration.spec.feature_contracts:
