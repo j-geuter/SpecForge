@@ -37,6 +37,12 @@ gradients. It shares the same sequence-anchor reduction, teacher cache, and
 projection optimization. `training.dpakl_alpha` defaults to `0.5` in `[0, 1]`;
 the example uses `0.3`. With a point-mass teacher, its actor also becomes CE.
 
+DPAKL-reverse selects `training.loss_type: dpakl-reverse` and uses the reverse KL
+actor `sum_v q_t(v) * (log q_t(v) - log p_t(v))`, i.e. KL(draft||target). It is
+identical to DPAKL otherwise and reuses `training.dpakl_alpha`. It requires
+strictly positive teacher probabilities (always true for finite LM-head logits);
+a point-mass teacher makes it infinite.
+
 For all three training objectives, the frozen target head projects each sequence
 position once per forward, outside activation-checkpoint recomputation. Each objective
 chunk gathers its teacher logits by predecessor position. This avoids repeated
@@ -97,7 +103,7 @@ reduction with a static DFlash baseline, set `training.loss_type: dflash` and
 legacy static DFlash normalization. D-PACE already uses sequence-anchor
 reduction without that flag.
 
-`dpard_loss`, `dpala_loss`, and `dpakl_loss` report their objectives through
+`dpard_loss`, `dpala_loss`, `dpakl_loss`, and `dpakl-reverse_loss` report their objectives through
 the standard trainer metrics.
 The selected objective, effective alpha, and anchor-normalization setting are
 recorded in checkpoint resume contracts.

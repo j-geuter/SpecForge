@@ -604,6 +604,7 @@ class TrainingConfig(StrictConfigModel):
         "dpard",
         "dpala",
         "dpakl",
+        "dpakl-reverse",
         "dpace-cumulative-confidence-only",
         "dpace-continuation-value-only",
     ] = "dflash"
@@ -654,7 +655,7 @@ class TrainingConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def _validate_training_shape(self):
-        if self.loss_type in {"dpard", "dpala", "dpakl"}:
+        if self.loss_type in {"dpard", "dpala", "dpakl", "dpakl-reverse"}:
             if self.strategy != "dflash":
                 raise ValueError(
                     f"training.loss_type={self.loss_type} requires strategy=dflash"

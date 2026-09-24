@@ -82,7 +82,7 @@ class DPardTests(unittest.TestCase):
         torch.testing.assert_close(overlap.loss_den, ce.loss_den)
 
     def test_overlap_objectives_reject_selector_and_lk(self):
-        for objective in ("dpard", "dpala", "dpakl"):
+        for objective in ("dpard", "dpala", "dpakl", "dpakl-reverse"):
             with self.subTest(objective=objective):
                 with self.assertRaisesRegex(ValueError, "LK"):
                     model(objective, lk_loss_type="tv")
@@ -125,6 +125,17 @@ class DPardTests(unittest.TestCase):
             torch.autograd.grad(kl.ce_loss_num, self.logits)[0],
             torch.autograd.grad(ce.ce_loss_num, self.logits)[0],
         )
+
+    def test_dpakl_reverse_kl_and_detached_credit(self):
+        terms = self.terms(model("dpakl-reverse"), teacher=self.teacher)
+        actor = 0.25 * math.log(0.5) + 0.75 * math.log(1.5)
+        torch.testing.assert_close(terms.loss_den, torch.tensor(2.0))
+        torch.testing.assert_close(terms.ce_loss_num, torch.tensor(actor * 3.28125))
+        (terms.ce_loss_num / terms.loss_den).backward()
+        self.assertIsNone(self.teacher.grad)
+        q = torch.tensor([0.25, 0.75])
+        gradient = q * (torch.log(q / 0.5) - actor)
+        torch.testing.assert_close(self.logits.grad[0, 0, 1], gradient * 0.41015625)
 
     def test_missing_teacher_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "target_last_hidden_states"):

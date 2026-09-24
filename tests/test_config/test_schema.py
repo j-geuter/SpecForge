@@ -76,6 +76,18 @@ def _write(payload: dict, suffix: str) -> str:
 
 
 class ConfigSchemaTest(unittest.TestCase):
+    def test_dpakl_reverse_uses_dpakl_alpha(self):
+        payload = _online_payload("dflash")
+        payload["training"].update(loss_type="dpakl-reverse", dpakl_alpha=0.3)
+        config = Config.model_validate(payload)
+        self.assertEqual(config.training.dpakl_alpha, 0.3)
+        for changes in ({"strategy": "dspark"}, {"lk_loss_type": "tv"}):
+            with self.subTest(changes=changes):
+                invalid = copy.deepcopy(payload)
+                invalid["training"].update(changes)
+                with self.assertRaises(ValidationError):
+                    Config.model_validate(invalid)
+
     def test_dpakl_is_a_dflash_objective(self):
         payload = _online_payload("dflash")
         payload["training"].update(loss_type="dpakl", dpakl_alpha=0.3)

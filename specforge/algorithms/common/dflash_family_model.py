@@ -33,11 +33,12 @@ _VALID_LOSS_TYPES = {
     "dpard",
     "dpala",
     "dpakl",
+    "dpakl-reverse",
     "dpace-cumulative-confidence-only",
     "dpace-continuation-value-only",
 }
 _DPACE_LOSS_TYPES = _VALID_LOSS_TYPES - {"dflash"}
-_OVERLAP_LOSS_TYPES = {"dpard", "dpala", "dpakl"}
+_OVERLAP_LOSS_TYPES = {"dpard", "dpala", "dpakl", "dpakl-reverse"}
 _VALID_LK_LOSS_TYPES = {None, "alpha", "lambda", "tv"}
 
 
@@ -544,7 +545,7 @@ class OnlineDFlashModel(nn.Module):
             dims=[-1],
         )
 
-        if loss_type in {"dpace", "dpard", "dpala", "dpakl"}:
+        if loss_type in {"dpace", "dpard", "dpala", "dpakl", "dpakl-reverse"}:
             return suffix
         if loss_type == "dpace-continuation-value-only":
             return suffix / prefix.clamp_min(torch.finfo(prefix.dtype).tiny)
@@ -925,6 +926,13 @@ class OnlineDFlashModel(nn.Module):
                 p = log_p.exp()
                 neg_log_q = torch.where(
                     p > 0, p * (log_p - log_q), 0.0
+                ).sum(dim=-1)
+            elif self.loss_type == "dpakl-reverse":
+                # Reverse KL(draft||target) is infinite wherever the target
+                # probability is exactly zero; LM-head teacher logits are finite.
+                q = log_q.exp()
+                neg_log_q = torch.where(
+                    q > 0, q * (log_q - log_p), 0.0
                 ).sum(dim=-1)
             else:
                 neg_log_q = -torch.logsumexp(torch.minimum(log_p, log_q), dim=-1)
