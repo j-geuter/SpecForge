@@ -79,6 +79,13 @@ class DPardForwardTest(unittest.TestCase):
     def test_dpala_b16_forward_backward(self):
         self.check_forward("cpu", torch.float32, "dpala")
 
+    def test_dpakl_b16_forward_backward(self):
+        self.check_forward("cpu", torch.float32, "dpakl")
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
+    def test_dpakl_b16_bf16_forward_backward(self):
+        self.check_forward("cuda", torch.bfloat16, "dpakl")
+
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required")
     def test_b16_bf16_forward_backward(self):
         self.check_forward("cuda", torch.bfloat16)

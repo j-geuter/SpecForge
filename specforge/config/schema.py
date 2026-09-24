@@ -603,12 +603,14 @@ class TrainingConfig(StrictConfigModel):
         "dpace",
         "dpard",
         "dpala",
+        "dpakl",
         "dpace-cumulative-confidence-only",
         "dpace-continuation-value-only",
     ] = "dflash"
     dpace_alpha: float = 0.5
     dpard_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
     dpala_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
+    dpakl_alpha: float = Field(default=0.5, ge=0.0, le=1.0)
     dflash_normalize_by_anchors: bool = False
     #: Weight of the top-k path-selector objective for DFlash2 drafts.
     dflash2_selector_loss_alpha: float = Field(default=1.0, ge=0.0)
@@ -652,13 +654,13 @@ class TrainingConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def _validate_training_shape(self):
-        if self.loss_type in {"dpard", "dpala"}:
+        if self.loss_type in {"dpard", "dpala", "dpakl"}:
             if self.strategy != "dflash":
                 raise ValueError(
                     f"training.loss_type={self.loss_type} requires strategy=dflash"
                 )
             if self.lk_loss_type is not None:
-                raise ValueError("D-PARD/DPALA cannot be combined with LK loss")
+                raise ValueError("D-PARD/DPALA/DPAKL cannot be combined with LK loss")
         if self.dflash_normalize_by_anchors and self.strategy != "dflash":
             raise ValueError("anchor normalization requires strategy=dflash")
         if not 0.0 <= self.dpace_alpha <= 1.0:

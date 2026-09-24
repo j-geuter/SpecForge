@@ -308,7 +308,7 @@ class BuiltinProviderContractTest(unittest.TestCase):
                 {key for key in current if saved.get(key) != current[key]},
                 {"dflash_loss_type"},
             )
-        for loss_type in ("dpace", "dpard", "dpala"):
+        for loss_type in ("dpace", "dpard", "dpala", "dpakl"):
             model.loss_type = loss_type
             self.assertEqual(
                 resume(None, draft, model), {**legacy, "dflash_loss_type": loss_type}

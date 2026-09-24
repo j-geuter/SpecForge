@@ -1,4 +1,4 @@
-# D-PARD and DPALA for DFlash1
+# D-PARD, DPALA, and DPAKL for DFlash1
 
 D-PARD is selected with `training.strategy: dflash` and
 `training.loss_type: dpard`. It trains the DFlash1 draft with full-vocabulary
@@ -29,7 +29,15 @@ Rényi-half divergence. Its smoothing parameter is `training.dpala_alpha`
 The actor is computed in log space as `-logsumexp(min(log_p, log_q))`.
 Both objectives reduce to hard-label CE with a point-mass teacher.
 
-For both training objectives, the frozen target head projects each sequence
+DPAKL selects `training.loss_type: dpakl` and uses the forward KL actor
+`sum_v p_t(v) * (log p_t(v) - log q_t(v))`, with the convention `0 log 0 = 0`.
+The KL direction is target-to-draft, not reverse KL. Teacher probabilities and
+the overlap-based position weights are detached; only the draft receives
+gradients. It shares the same sequence-anchor reduction, teacher cache, and
+projection optimization. `training.dpakl_alpha` defaults to `0.5` in `[0, 1]`;
+the example uses `0.3`. With a point-mass teacher, its actor also becomes CE.
+
+For all three training objectives, the frozen target head projects each sequence
 position once per forward, outside activation-checkpoint recomputation. Each objective
 chunk gathers its teacher logits by predecessor position. This avoids repeated
 target-head matrix products for overlapping anchors without materializing an
@@ -72,6 +80,10 @@ specforge train --config examples/configs/offline/colocated/qwen3-4b-dflash-dpar
 # DPALA uses the same captured features.
 specforge train --config examples/configs/offline/colocated/qwen3-4b-dflash-dpala-offline.yaml --plan
 specforge train --config examples/configs/offline/colocated/qwen3-4b-dflash-dpala-offline.yaml
+
+# DPAKL uses the same captured features.
+specforge train --config examples/configs/offline/colocated/qwen3-4b-dflash-dpakl-offline.yaml --plan
+specforge train --config examples/configs/offline/colocated/qwen3-4b-dflash-dpakl-offline.yaml
 ```
 
 The example uses Qwen3-4B, three full-attention draft layers, B16, up to 512
@@ -79,12 +91,13 @@ anchors per sequence, alpha 0.5, and seed 42. It trains for six epochs on two
 GPUs with per-rank batch size 1 and accumulation 2. Change the model, data,
 output, and process-count settings for your environment before launching.
 
-D-PARD and DPALA automatically enable sequence-anchor reduction. To use the same
+D-PARD, DPALA, and DPAKL automatically enable sequence-anchor reduction. To use the same
 reduction with a static DFlash baseline, set `training.loss_type: dflash` and
 `training.dflash_normalize_by_anchors: true`; its default `false` preserves
 legacy static DFlash normalization. D-PACE already uses sequence-anchor
 reduction without that flag.
 
-`dpard_loss` and `dpala_loss` report their objectives through the standard trainer metrics.
+`dpard_loss`, `dpala_loss`, and `dpakl_loss` report their objectives through
+the standard trainer metrics.
 The selected objective, effective alpha, and anchor-normalization setting are
 recorded in checkpoint resume contracts.

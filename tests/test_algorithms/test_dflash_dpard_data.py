@@ -82,7 +82,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             torch.save(raw, Path(directory) / "sample.ckpt")
-            for loss_type in ("dflash", "dpace", "dpard", "dpala"):
+            for loss_type in ("dflash", "dpace", "dpard", "dpala", "dpakl"):
                 with self.subTest(loss_type=loss_type):
                     provider = resolve_run(
                         self.config(loss_type)
@@ -94,7 +94,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
                             directory, run_id="test", ttt_length=1, max_len=3
                         ).read()
                     store = LocalFeatureStore("test")
-                    if loss_type in {"dpard", "dpala"}:
+                    if loss_type in {"dpard", "dpala", "dpakl"}:
                         with self.assertRaisesRegex(
                             KeyError, "target_last_hidden_states"
                         ):
@@ -122,7 +122,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
             "--draft-model-config",
             str(Path(__file__).resolve().parents[2] / "configs/qwen3-8b-dflash.json"),
         ]
-        for objective in ("dpard", "dpala"):
+        for objective in ("dpard", "dpala", "dpakl"):
             argv[argv.index("--loss-type") + 1] = objective
             with self.subTest(objective=objective), mock.patch("sys.argv", argv):
                 args = parse_args()
@@ -164,7 +164,7 @@ class DFlashDPARDDataTest(unittest.TestCase):
                 "target_last_hidden_states": torch.ones(1, 3, 4),
             },
         )
-        for objective in ("dpard", "dpala"):
+        for objective in ("dpard", "dpala", "dpakl"):
             for model in (TeacherLoss(), Wrapper()):
                 getattr(model, "module", model).loss_type = objective
                 with self.subTest(objective=objective, wrapped=isinstance(model, Wrapper)):

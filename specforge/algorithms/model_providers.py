@@ -395,6 +395,8 @@ def build_dflash_model(
                 if cfg.training.loss_type == "dpard"
                 else cfg.training.dpala_alpha
                 if cfg.training.loss_type == "dpala"
+                else cfg.training.dpakl_alpha
+                if cfg.training.loss_type == "dpakl"
                 else cfg.training.dpace_alpha
             ),
             normalize_by_anchors=cfg.training.dflash_normalize_by_anchors,

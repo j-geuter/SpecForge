@@ -82,7 +82,7 @@ class DPardTests(unittest.TestCase):
         torch.testing.assert_close(overlap.loss_den, ce.loss_den)
 
     def test_overlap_objectives_reject_selector_and_lk(self):
-        for objective in ("dpard", "dpala"):
+        for objective in ("dpard", "dpala", "dpakl"):
             with self.subTest(objective=objective):
                 with self.assertRaisesRegex(ValueError, "LK"):
                     model(objective, lk_loss_type="tv")
@@ -102,6 +102,28 @@ class DPardTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             (original.ce_loss_num / original.loss_den).item(), -math.log(0.25), places=5
+        )
+
+    def test_dpakl_forward_kl_and_detached_credit(self):
+        terms = self.terms(model("dpakl"), teacher=self.teacher)
+        actor = 0.5 * math.log(2.0) + 0.5 * math.log(2.0 / 3.0)
+        torch.testing.assert_close(terms.loss_den, torch.tensor(2.0))
+        torch.testing.assert_close(terms.ce_loss_num, torch.tensor(actor * 3.28125))
+        (terms.ce_loss_num / terms.loss_den).backward()
+        self.assertIsNone(self.teacher.grad)
+        torch.testing.assert_close(
+            self.logits.grad[0, 0, 1], torch.tensor([-0.25, 0.25]) * 0.41015625
+        )
+
+    def test_dpakl_point_mass_matches_ce_without_nan(self):
+        teacher = torch.tensor([0.0, -float("inf")]).expand_as(self.logits)
+        kl = self.terms(model("dpakl"), teacher=teacher)
+        ce = self.terms(model("dpace"))
+        torch.testing.assert_close(kl.ce_loss_num, ce.ce_loss_num)
+        torch.testing.assert_close(kl.loss_den, ce.loss_den)
+        torch.testing.assert_close(
+            torch.autograd.grad(kl.ce_loss_num, self.logits)[0],
+            torch.autograd.grad(ce.ce_loss_num, self.logits)[0],
         )
 
     def test_missing_teacher_is_rejected(self):
